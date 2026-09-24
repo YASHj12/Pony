@@ -169,21 +169,23 @@ pi install git:github.com/DietrichGebert/ponytail
 
 ### OpenCode
 
-`opencode.json`에 다음을 더한다:
+OpenCode 2.0.15 이상에서는 `opencode.json`에 다음을 더한다:
+
+```json
+{ "plugins": ["@dietrichgebert/ponytail"] }
+```
+
+OpenCode 1.18.29 이상에서는 V1 키를 쓴다:
 
 ```json
 { "plugin": ["@dietrichgebert/ponytail"] }
 ```
 
-체크아웃에서 직접 돌려도 된다(플러그인이 `hooks/`와 `skills/`를 그대로 쓴다):
+체크아웃에서 직접 실행하려면 OpenCode 버전에 맞는 키의 패키지 이름을 `"."`로 바꾼다. OpenCode는 `package.json`을 통해 체크아웃 패키지를 불러오고, 플러그인은 이 파일의 위치에서 `hooks/`와 `skills/`를 찾는다.
 
-```json
-{ "plugin": ["./.opencode/plugins/ponytail.mjs"] }
-```
+하나의 패키지가 두 버전을 모두 지원한다. 각 어댑터는 에이전트 반복 요청에 현재 레벨의 룰셋을 주입하고 `/ponytail` 명령을 등록한다([Commands](#commands) 참고). 두 버전은 같은 사용자 전역 레벨 파일을 쓴다. OpenCode는 이 체크아웃의 `AGENTS.md`도 자동 로드하므로, 플러그인이 없어도 규칙이 적용된다. 플러그인은 `lite/full/ultra/off` 레벨을 제공한다.
 
-매 턴마다 지금 레벨의 룰셋을 주입하고, `/ponytail` 명령들을 붙여 준다([Commands](#commands) 참고). OpenCode는 이 저장소의 `AGENTS.md`도 알아서 불러오니, 플러그인이 없어도 규칙은 살아 있다. 플러그인은 `lite/full/ultra/off` 레벨을 얹어 준다.
-
-`./` 경로는 프로젝트의 `opencode.json`을 기준으로 풀린다. 체크아웃 하나를 여러 프로젝트에서 같이 쓰려면, 대신 `.mjs`의 절대 경로를 가리키면 된다(그 파일은 제 위치를 기준으로 `hooks/`와 `skills/`를 찾는다).
+`.` 경로는 프로젝트의 `opencode.json`을 기준으로 풀린다. 체크아웃 하나를 여러 프로젝트에서 공유하려면 체크아웃 디렉터리의 절대 경로를 사용한다.
 
 ### Gemini CLI
 
@@ -266,7 +268,7 @@ node ponytail/scripts/cursor-hooks.js install
 
 이게 끝이었다. 그 사람이라면 흐뭇해할 거다. 입 밖으로 내진 않겠지만.
 
-매 세션 켜져 있고, 명령 몇 개가 딸려 온다([Commands](#commands) 참고). `/ponytail ultra`는 코드베이스가 당신에게 단단히 밉보인 날을 위해 있다. 시작할 때와 모드를 바꿀 때 지금 모드를 보여 준다.
+매 세션 켜져 있고, 명령 몇 개가 딸려 온다([Commands](#commands) 참고). `/ponytail ultra`는 코드베이스가 당신에게 단단히 밉보인 날을 위해 있다. 시작할 때와 모드를 바꿀 때 지금 레벨을 보여 준다.
 
 새 세션마다 적용할 레벨은 `PONYTAIL_DEFAULT_MODE` 환경 변수(`lite`/`full`/`ultra`/`off`)로, 또는 `~/.config/ponytail/config.json`의 `defaultMode` 필드(Windows에선 `%APPDATA%\ponytail\config.json`)로 정한다. 기본값은 `full`이다.
 
@@ -280,6 +282,22 @@ Codex 확장을 쓰는 VS Code는 이 저장소가 함께 싣는 `AGENTS.md`를 
 
 어떤 파일이 어느 에이전트에 매핑되는지: [Agent portability](docs/agent-portability.md).
 
+## 제거
+
+| 호스트 | 명령 |
+|--------|------|
+| Claude Code | `/plugin remove ponytail` |
+| OpenCode 2 | `opencode plugin remove @dietrichgebert/ponytail` (`plugins`에서 패키지를 지워도 된다) |
+| OpenCode 1 | `opencode.json`의 `plugin`에서 패키지를 지운다 |
+| Codex | `codex plugin remove ponytail` |
+| Devin CLI | `devin plugins remove ponytail` |
+| Grok Build | `grok plugin uninstall ponytail` |
+| Pi agent | `pi uninstall ponytail` |
+| Cursor 훅 | `node scripts/cursor-hooks.js uninstall` (프로젝트 설치는 `--project` 추가) |
+| Cursor / Windsurf / Cline / Qoder 규칙 | 복사한 규칙 파일을 지운다 |
+
+이 명령은 플러그인 파일만 지운다. 레벨 플래그(`~/.claude/.ponytail-active`, `~/.config/opencode/.ponytail-active`, `~/.cursor/.ponytail-active`), `~/.config/ponytail/config.json`, `~/.cursor/hooks.json`의 Ponytail 항목, `~/.claude/settings.json`의 Ponytail `statusLine`은 남을 수 있다. 플러그인을 지우기 전에 `node scripts/uninstall.js`를 실행해 이 데이터를 정리한다.
+
 ## Commands
 
 | 명령 | 하는 일 |
@@ -291,7 +309,7 @@ Codex 확장을 쓰는 VS Code는 이 저장소가 함께 싣는 `AGENTS.md`를 
 | `/ponytail-gain` | 벤치마크로 잰 효과 스코어보드(코드 절감, 비용 절감, 속도 향상)를 보여 준다. |
 | `/ponytail-help` | 위 명령들의 빠른 참조. |
 
-명령들은 스킬을 지원하는 호스트가 있어야 돈다(Claude Code, Codex, Devin CLI, OpenCode, Gemini, pi, Swival). Codex에선 스킬이라 `@`로 부른다(`@ponytail-review`). [훅](#cursor)을 쓰는 Cursor는 `/ponytail` 레벨 전환만 되고, 일반 메시지로 입력한다. 지시문 전용 어댑터(Cursor 규칙 파일, Windsurf, Cline, Copilot, Kiro, Antigravity)는 명령 없이 늘 켜진 룰셋만 불러온다.
+명령들은 스킬을 지원하는 호스트가 있어야 돈다(Claude Code, Codex, Devin CLI, OpenCode 2 또는 1.18.29+, Gemini, pi, Swival). Codex에선 스킬이라 `@`로 부른다(`@ponytail-review`). [훅](#cursor)을 쓰는 Cursor는 `/ponytail` 레벨 전환만 되고, 일반 메시지로 입력한다. 지시문 전용 어댑터(Cursor 규칙 파일, Windsurf, Cline, Copilot, Kiro, Antigravity)는 명령 없이 늘 켜진 룰셋만 불러온다.
 
 ## Development
 

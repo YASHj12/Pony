@@ -73,11 +73,19 @@ function getClaudeDir() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
+function getOpenCodeStatePath() {
+  return path.join(
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+    'opencode',
+    '.ponytail-active',
+  );
+}
+
 function getDefaultMode() {
   // 1. Environment variable (highest priority)
   const envMode = process.env.PONYTAIL_DEFAULT_MODE;
   // ponytail: a default must be a runtime level (off/lite/full/ultra); review is
-  // a session-only mode, never a valid default (#377). Validate against
+  // a session-only level, never a valid default (#377). Validate against
   // RUNTIME_MODES so a stray env var or config can't make review the default.
   if (envMode && RUNTIME_MODES.includes(envMode.toLowerCase())) {
     return envMode.toLowerCase();
@@ -159,6 +167,7 @@ module.exports = {
   getConfigPath,
   getClaudeDir,
   getHideStatus,
+  getOpenCodeStatePath,
   getQuietStartup,
   isShellSafe,
   normalizeMode,
