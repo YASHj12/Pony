@@ -1,6 +1,7 @@
-#!/usr/bin/env node
-// Smoke test for the OpenCode adapter: the plugin's hooks behave against the
-// real (structural) OpenCode hook shapes. No live OpenCode needed.
+// Smoke test for both OpenCode adapters: the v1 plugin's hooks (loaded via
+// `main` by opencode 1.x) and the v2 entry (`exports["./server"]`, loaded by
+// opencode 2.x) behave against the real (structural) OpenCode shapes. No live
+// OpenCode needed.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,11 +19,12 @@ process.env.XDG_CONFIG_HOME = tmp;
 delete process.env.PONYTAIL_DEFAULT_MODE;
 const statePath = path.join(tmp, 'opencode', '.ponytail-active');
 
-let loadPlugin, parseCommandFile;
+let loadPlugin, parseCommandFile, v2Plugin;
 test.before(async () => {
   const url = pathToFileURL(path.join(__dirname, '..', '.opencode', 'plugins', 'ponytail.mjs'));
   const mod = await import(url);
   loadPlugin = mod.default;
+  v2Plugin = (await import(pathToFileURL(path.join(__dirname, '..', '.opencode', 'plugins', 'ponytail.v2.mjs')).href)).default;
   // The frontmatter parser used to be exported from the plugin module itself.
   // OpenCode's legacy loader treats every exported function as a plugin and
   // tried to invoke it with the plugin context object, which crashed. The
@@ -99,6 +101,104 @@ test('parseCommandFile returns null when there is no frontmatter', () => {
   const bare = path.join(tmp, 'cmd-bare.md');
   fs.writeFileSync(bare, 'no frontmatter here\n');
   assert.equal(parseCommandFile(bare), null);
+});
+
+// --- v2 entry (opencode 2.x) ---
+// v2 has no per-turn hooks: setup registers a callback per domain that mutates
+// a draft. The doubles capture them so a test can replay and assert the draft.
+function mockCtx(agents) {
+  const agentCallbacks = [];
+  const added = [];
+  return {
+    added,
+    ctx: {
+      agent: { transform: async (cb) => { agentCallbacks.push(cb); } },
+      skill: {
+        transform: async (cb) =>
+          cb({
+            add: (s) => added.push(s),
+            list: () => added,
+            get: (id) => added.find((s) => s.id === id),
+            update: (id, fn) => fn(added.find((s) => s.id === id)),
+            remove: (id) => added.splice(added.indexOf(added.find((s) => s.id === id)), 1),
+          }),
+      },
+    },
+    replayAgents: () => {
+      const draft = { list: () => agents, update: (id, fn) => fn(agents.find((a) => a.id === id)) };
+      for (const cb of agentCallbacks) cb(draft);
+    },
+  };
+}
+
+test('v2 default export is a plugin definition ({ id, setup })', () => {
+  assert.equal(typeof v2Plugin, 'object');
+  assert.equal(v2Plugin.id, 'ponytail');
+  assert.equal(typeof v2Plugin.setup, 'function');
+});
+
+test('v2 setup bakes the ruleset into every agent system prompt', async () => {
+  try { fs.unlinkSync(statePath); } catch (e) {}
+  const agents = [{ id: 'a' }, { id: 'b', system: 'You are helpful.' }];
+  const { ctx, replayAgents } = mockCtx(agents);
+  await v2Plugin.setup(ctx);
+  replayAgents();
+  for (const agent of agents) assert.match(agent.system, /PONYTAIL MODE ACTIVE — level: full/);
+  assert.match(agents[1].system, /You are helpful\./, 'must not clobber the agent prompt');
+});
+
+test('v2 setup injects nothing when off', async () => {
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, 'off');
+  const agents = [{ id: 'a' }];
+  const { ctx, replayAgents } = mockCtx(agents);
+  await v2Plugin.setup(ctx);
+  replayAgents();
+  assert.equal(agents[0].system, undefined);
+});
+
+test('v2 registers each packaged skill with the shape the v2 draft requires', async () => {
+  try { fs.unlinkSync(statePath); } catch (e) {}
+  const { ctx, added } = mockCtx([]);
+  await v2Plugin.setup(ctx);
+  const root = path.join(__dirname, '..', 'skills');
+  const expected = fs.readdirSync(root).filter((n) => fs.existsSync(path.join(root, n, 'SKILL.md')));
+  assert.equal(added.length, expected.length, `expected one skill per SKILL.md under ${root}`);
+  for (const skill of added) {
+    // v2's skill schema rejects a missing id/name/path/content, and a throw
+    // here disables the whole plugin, so assert every required key is present.
+    assert.equal(typeof skill.id, 'string');
+    assert.equal(typeof skill.name, 'string');
+    assert.equal(typeof skill.path, 'string');
+    assert.ok(fs.existsSync(skill.path), `${skill.id} points at a missing file`);
+    assert.ok(skill.description.length > 0, `${skill.id} needs a description`);
+    assert.ok(skill.content.length > 0, `${skill.id} needs content`);
+    assert.ok(!skill.content.startsWith('---'), `${skill.id} content must be the body, not the raw file`);
+  }
+  assert.ok(added.some((s) => s.id === 'ponytail-review'), 'the review skill must register');
+});
+
+test('v2 skill descriptions fold multi-line frontmatter into one string', async () => {
+  try { fs.unlinkSync(statePath); } catch (e) {}
+  const { ctx, added } = mockCtx([]);
+  await v2Plugin.setup(ctx);
+  const review = added.find((s) => s.id === 'ponytail-review');
+  // ponytail-review's frontmatter uses `description: >` across 8 indented
+  // lines; an unfolded description would be just ">" and never match a skill.
+  assert.ok(review.description.length > 100, 'folded description must be joined');
+  assert.ok(!review.description.includes('\n'), 'description must be a single line');
+  assert.match(review.description, /over-engineering/);
+});
+
+test('v2 does not stack duplicates when the plugin is registered twice', async () => {
+  try { fs.unlinkSync(statePath); } catch (e) {}
+  const agents = [{ id: 'a' }];
+  const { ctx, replayAgents } = mockCtx(agents);
+  await v2Plugin.setup(ctx);
+  await v2Plugin.setup(ctx);
+  replayAgents();
+  replayAgents();
+  assert.equal(agents[0].system.match(/PONYTAIL MODE ACTIVE/g).length, 1);
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
