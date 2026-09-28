@@ -70,6 +70,31 @@ test('system.transform merges into existing system entry (Qwen compat, #296)', a
   assert.match(output.system[0], /PONYTAIL MODE ACTIVE/);
 });
 
+test('config injects the active ruleset into subagent prompts', async () => {
+  fs.writeFileSync(statePath, 'lite');
+  const hooks = await loadPlugin({});
+  const config = {
+    agent: {
+      explore: { mode: 'subagent', prompt: 'Explore only.' },
+      build: { mode: 'primary', prompt: 'Build the change.' },
+      helper: { mode: 'all' },
+    },
+  };
+  await hooks.config(config);
+  assert.match(config.agent.explore.prompt, /Explore only\./);
+  assert.match(config.agent.explore.prompt, /PONYTAIL MODE ACTIVE — level: lite/);
+  assert.equal(config.agent.build.prompt, 'Build the change.');
+  assert.match(config.agent.helper.prompt, /PONYTAIL MODE ACTIVE — level: lite/);
+});
+
+test('config leaves subagent prompts unchanged when ponytail is off', async () => {
+  fs.writeFileSync(statePath, 'off');
+  const hooks = await loadPlugin({});
+  const config = { agent: { explore: { mode: 'subagent', prompt: 'Explore only.' } } };
+  await hooks.config(config);
+  assert.equal(config.agent.explore.prompt, 'Explore only.');
+});
+
 test('unsupported /ponytail arguments do not reset the current mode', async () => {
   const hooks = await loadPlugin({});
   fs.writeFileSync(statePath, 'ultra');

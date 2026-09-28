@@ -6,12 +6,12 @@
 // instruction builder so Claude Code, Codex, pi, and OpenCode all read one
 // source of truth.
 //
-// OpenCode loads this as a server plugin — add it to your opencode.json:
-//   { "plugin": ["@dietrichgebert/ponytail"] }
+// OpenCode 1.x server plugin — add it to your opencode.json:
+//   { "plugin": ["@dietrichgebert/ponytail/v1"] }
+// OpenCode 2.x uses ponytail-v2.mjs (the package root) instead.
 
 import { createRequire } from 'module';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -20,27 +20,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // The shared instruction builder is CommonJS; bridge to it from this ES module.
 const require = createRequire(import.meta.url);
 const { getPonytailInstructions } = require('../../hooks/ponytail-instructions');
-const { getDefaultMode, normalizePersistedMode } = require('../../hooks/ponytail-config');
+const { readMode, writeMode, modeFromArgs } = require('./ponytail-state.cjs');
 const { parseCommandFile } = require('./ponytail-frontmatter.cjs');
 
-// OpenCode has no flag-file convention of its own; keep mode beside its config.
-const statePath = path.join(
-  process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
-  'opencode',
-  '.ponytail-active',
-);
+// Sub-agent sessions don't get the chat system transform; bake the ruleset
+// into every non-primary agent's prompt instead.
+function injectSubagentPrompts(config) {
+  if (!config || !config.agent) return;
 
-function readMode() {
-  try {
-    return normalizePersistedMode(fs.readFileSync(statePath, 'utf8').trim()) || getDefaultMode();
-  } catch (e) {
-    return getDefaultMode();
+  const mode = readMode();
+  if (mode === 'off') return;
+  const instructions = getPonytailInstructions(mode);
+
+  for (const agent of Object.values(config.agent)) {
+    if (!agent || agent.mode === 'primary') continue;
+    agent.prompt = agent.prompt
+      ? agent.prompt + '\n\n' + instructions
+      : instructions;
   }
-}
-
-function writeMode(mode) {
-  fs.mkdirSync(path.dirname(statePath), { recursive: true });
-  fs.writeFileSync(statePath, mode);
 }
 
 export default async ({ client } = {}) => {
@@ -53,6 +50,7 @@ export default async ({ client } = {}) => {
   return {
     // Register slash commands + skills directory.
     config: async (config) => {
+      injectSubagentPrompts(config);
       if (!config.command) config.command = {};
       const commandDir = path.join(__dirname, '..', 'command');
       try {
@@ -89,8 +87,7 @@ export default async ({ client } = {}) => {
     'command.execute.before': async (input) => {
       if (!input || input.command !== 'ponytail') return;
       // `off` is persisted like any mode; the transform reads it and stays silent.
-      const args = String(input.arguments || '').trim();
-      const mode = args ? normalizePersistedMode(args) : getDefaultMode();
+      const mode = modeFromArgs(input.arguments);
       if (!mode) return;
       writeMode(mode);
       log('info', 'ponytail ' + mode);
