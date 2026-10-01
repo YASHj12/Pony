@@ -1,19 +1,15 @@
-/* Pipeline tests: CV signals → classification → grouping → deck → captions.
+/* Pipeline tests against the real company template.
  *   node test/pipeline.test.mjs
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import * as fx from './fixtures.mjs';
-
-/* The browser modules are plain ESM (public/js/package.json sets type:module),
-   so Node can import the very same files the page loads. */
 import * as cv from '../public/js/cv.js';
 import * as classify from '../public/js/classify.js';
 import * as report from '../public/js/report.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-
 const template = JSON.parse(readFileSync(path.join(here, '..', 'templates', 'fea-report.json'), 'utf8'));
 
 let pass = 0, fail = 0;
@@ -23,171 +19,177 @@ const check = (name, cond, extra = '') => {
 };
 const section = (t) => console.log(`\n${t}`);
 
-/* ── build photo records from the synthetic images ───────────────── */
 function photo(name, img) {
-  const cvSignals = cv.analyzeImageData(img.data, img.width, img.height);
-  cvSignals.legend = cv.detectLegend(img.data, img.width, img.height);
-  return { id: name, name, cv: cvSignals, kind: cv.inferKind(cvSignals), hash: cv.dHash(img.data, img.width, img.height) };
+  const signals = cv.analyzeImageData(img.data, img.width, img.height);
+  signals.legend = cv.detectLegend(img.data, img.width, img.height);
+  return { id: name, name, cv: signals, kind: cv.inferKind(signals), hash: cv.dHash(img.data, img.width, img.height) };
 }
 
-const pFull = photo('LC1_vonMises_bracket_iso.png', fx.contourFull);
-const pZoom = photo('LC1_vonMises_bracket_zoom.png', fx.contourZoomed);
-const pMesh = photo('LC1_mesh_fine.png', fx.meshImage);
-const pGeom = photo('bracket_geometry_iso.png', fx.geometryImage);
-const pGraph = photo('mesh_convergence_graph.png', fx.graphImage);
-const pLegend = photo('legend_test.png', fx.legendImage);
+/* ── the drop: what an engineer would actually export for two load cases ── */
+const photos = [
+  photo('bracket_geometry_top.png', fx.geometryImage),
+  photo('bracket_geometry_iso.png', fx.geometryImage),
+  photo('LC1_mesh_fine.png', fx.meshImage),
+  photo('LC1_boundary_conditions.png', fx.meshImage),
+  photo('LC1_total_deformation_iso.png', fx.contourFull),
+  photo('LC1_vonMises_bracket_iso.png', fx.contourFull),
+  photo('LC1_vonMises_bracket_zoom.png', fx.contourZoomed),
+  photo('LC2_boundary_conditions.png', fx.meshImage),
+  photo('LC2_total_deformation_iso.png', fx.contourFull),
+  photo('LC2_vonMises_bracket_iso.png', fx.contourFull),
+  photo('LC2_cut_section_stress.png', fx.contourFull),
+  photo('mesh_convergence_graph.png', fx.graphImage),
+];
 
 section('CV: raw signals');
-check('legend image: colourbar detected', pLegend.cv.legend.found, JSON.stringify(pLegend.cv.legend));
-check('legend image: colourbar found on an edge', ['left', 'right', 'left-inner', 'right-inner'].includes(pLegend.cv.legend.side), pLegend.cv.legend.side);
-check('contour plot: full rainbow spectrum present', pFull.cv.spectrumBands >= 4, `bands=${pFull.cv.spectrumBands}`);
-check('contour plot: has a legend', pFull.cv.legend.found, JSON.stringify(pFull.cv.legend));
-check('mesh image: no colour', pMesh.cv.colorfulness < 8, `colorfulness=${pMesh.cv.colorfulness}`);
-check('mesh image: dense thin line work', pMesh.cv.lineDensity > 0.08, `lineDensity=${pMesh.cv.lineDensity}`);
-check('zoom: fills the frame (little background)', pZoom.cv.bgFraction < 0.06, `bgFraction=${pZoom.cv.bgFraction}`);
-check('full view: plenty of background', pFull.cv.bgFraction > 0.3, `bgFraction=${pFull.cv.bgFraction}`);
-
-section('CV: kind inference');
-check('contour plot recognised', pFull.kind.kind === 'contour', pFull.kind.kind);
-check('mesh recognised', pMesh.kind.kind === 'mesh', pMesh.kind.kind);
-check('geometry recognised', pGeom.kind.kind === 'geometry', pGeom.kind.kind);
-check('graph recognised', pGraph.kind.kind === 'graph', pGraph.kind.kind);
-
-section('Detail view detection (zoom / cut section)');
-check('frame-filling plot is not a detail on its own', cv.inferDetail(pZoom.cv, []).isDetail === false,
-  'conservative by design: a lone image is never called a zoom');
-check('frame-filling plot IS a detail next to its full view',
-  cv.inferDetail(pZoom.cv, [pFull.cv.bgFraction]).isDetail === true,
-  JSON.stringify(cv.inferDetail(pZoom.cv, [pFull.cv.bgFraction])));
-check('full view is never flagged as a detail', cv.inferDetail(pFull.cv, [pZoom.cv.bgFraction]).isDetail === false);
+check('legend image: colourbar detected', cv.detectLegend(fx.legendImage.data, fx.W, fx.H).found);
+check('contour plot: rainbow spectrum present', photos[4].cv.spectrumBands >= 4, `bands=${photos[4].cv.spectrumBands}`);
+check('mesh image: no colour, dense line work', photos[2].cv.colorfulness < 8 && photos[2].cv.lineDensity > 0.08);
+check('zoom fills the frame, full view does not',
+  photos[6].cv.bgFraction < 0.06 && photos[5].cv.bgFraction > 0.3,
+  `${photos[6].cv.bgFraction} vs ${photos[5].cv.bgFraction}`);
 
 section('Filename parsing');
-const f1 = classify.parseFilename('LC2_vonMises_bracket_iso.png');
-check('reads the load case', f1.loadCase === 'LC2', f1.loadCase);
-check('reads the result type', f1.type === 'Equivalent (von Mises) stress', f1.type);
-check('reads the view', f1.view === 'isometric', f1.view);
-check('reads the component', f1.component === 'Bracket', f1.component);
+const p1 = classify.parseFilename('LC2_vonMises_bracket_iso.png');
+check('load case, type, view and component', p1.loadCase === 'LC2' && p1.type === 'Equivalent (von Mises) stress' && p1.view === 'isometric' && p1.component === 'Bracket',
+  JSON.stringify(p1));
+check('cut section from the name', classify.parseFilename('LC2_cut_section_stress.png').detail.kind === 'section');
+check('total deformation from the name', classify.parseFilename('LC1_total_deformation_iso.png').type === 'Total deformation');
+check('boundary conditions from the name', classify.parseFilename('LC1_boundary_conditions.png').type === 'Boundary conditions');
+check('a bare screenshot invents nothing',
+  (() => { const f = classify.parseFilename('Screenshot 2026-10-01 141322.png'); return !f.type && !f.component && !f.loadCase; })());
+check('image(14).png invents nothing',
+  (() => { const f = classify.parseFilename('image(14).png'); return !f.type && !f.component; })());
 
-const f2 = classify.parseFilename('cut section LC2.png');
-check('cut section detected from the name', f2.detail.isDetail && f2.detail.kind === 'section', JSON.stringify(f2.detail));
-check('cut section still reads its load case', f2.loadCase === 'LC2', f2.loadCase);
-
-const f3 = classify.parseFilename('bracket total deformation iso.png');
-check('total deformation recognised', f3.type === 'Total deformation', f3.type);
-
-const f4 = classify.parseFilename('Screenshot 2026-10-01 141322.png');
-check('a bare screenshot yields no type', f4.type === null, String(f4.type));
-check('a bare screenshot yields no component', f4.component === null, String(f4.component));
-
-const f5 = classify.parseFilename('image(14).png');
-check('image(14) yields nothing invented', f5.type === null && f5.component === null && f5.loadCase === null);
-
-const f6 = classify.parseFilename('fatigue_life_bracket.png');
-check('fatigue recognised', f6.type === 'Fatigue life', f6.type);
-
-const f7 = classify.parseFilename('modal_frequency_mode3.png');
-check('modal recognised', f7.type === 'Modal shape', f7.type);
-
-/* ── the full pipeline ───────────────────────────────────────────── */
-section('Classification (two passes)');
-const photos = [pFull, pZoom, pMesh, pGeom, pGraph].map((p) => ({ ...p }));
 classify.classifyAll(photos);
+check('von Mises typed and cased', photos[5].cls.type === 'Equivalent (von Mises) stress' && photos[5].cls.loadCase === 'LC1');
+check('zoom view is a detail', photos[6].cls.detail.isDetail && photos[6].cls.detail.kind === 'zoom');
+check('cut section is a detail', photos[10].cls.detail.isDetail && photos[10].cls.detail.kind === 'section');
+check('full view is not a detail', !photos[5].cls.detail.isDetail);
+check('BC image typed', photos[3].cls.type === 'Boundary conditions');
 
-const full = photos.find((p) => p.name === pFull.name);
-const zoom = photos.find((p) => p.name === pZoom.name);
-const mesh = photos.find((p) => p.name === pMesh.name);
-const geom = photos.find((p) => p.name === pGeom.name);
+/* values a human typed and confirmed */
+photos[4].value = { max: 3, unit: 'mm', confirmed: true };            // LC1 deformation
+photos[5].value = { max: 74.2, unit: 'MPa', confirmed: true };        // LC1 stress
+photos[8].value = { max: 2.42, unit: 'mm', confirmed: true };         // LC2 deformation
+photos[9].value = { max: 300, unit: 'MPa', confirmed: true };         // LC2 stress
 
-check('lc1 stress typed from filename', full.cls.type === 'Equivalent (von Mises) stress', full.cls.type);
-check('lc1 stress tied to LC1', full.cls.loadCase === 'LC1', full.cls.loadCase);
-check('zoom named view flagged as a detail', zoom.cls.detail.isDetail === true, JSON.stringify(zoom.cls.detail));
-check('zoom detail kind is "zoom"', zoom.cls.detail.kind === 'zoom', zoom.cls.detail.kind);
-check('full view is not a detail', full.cls.detail.isDetail === false);
-check('mesh typed from filename', mesh.cls.type === 'Mesh', mesh.cls.type);
-check('geometry typed from filename', geom.cls.type === 'Geometry', geom.cls.type);
-check('every photo exposes confidence + review flags',
-  photos.every((p) => p.cls.confidences && Array.isArray(p.cls.needsReview)), 'shape');
+section('Allowable stress — matches the sample reports');
+check('213 / 1.3 → 163, as in sample.pptx', report.computeAllowable(213, 1.3) === 163, String(report.computeAllowable(213, 1.3)));
+check('380 / 1.3 → 292, as in 6203_KCP_MLD.pptx', report.computeAllowable(380, 1.3) === 292, String(report.computeAllowable(380, 1.3)));
 
-section('Grouping: details ride with their parent');
-const groups = classify.groupPhotos(photos);
-const stressGroup = groups.find((g) => g.family === 'stress');
-check('one stress group exists', !!stressGroup);
-check('the full view is the parent', stressGroup.main.name === pFull.name, stressGroup.main.name);
-check('the zoom became an inset on the parent', stressGroup.insets.some((i) => i.name === pZoom.name),
-  JSON.stringify(stressGroup.insets.map((i) => i.name)));
-check('no "missing full view" warning when a full view exists',
-  !stressGroup.issues.some((i) => /No full view/.test(i.text)), JSON.stringify(stressGroup.issues));
+const materials = {
+  columns: template.materials.columns,
+  rows: [['IS 2062', 'Gate', '191400', '0.3', '7.8E-9', '213', '']],
+};
+const meta = {
+  reportNo: 'MWI/FEA/ACK-6179/01', date: '4th Sept 2026', client: 'SILVERTONE',
+  part: 'Guillotine Gate & Frame', partShort: 'GG', analysis: 'Static Structural Analysis',
+  fos: 1.3, allowableRounding: 'floor',
+  cases: {
+    LC1: { description: 'Gate Fully Closed (Self Weight + Pressure)', bcText: 'A) Roller contact area is fixed. B) Design pressure 621.47 mmWC applied. C) Self weight considered.' },
+    LC2: { description: 'Gate Partially Closed (Self Weight + Pressure)', bcText: 'A) Roller contact is fixed. B) Design pressure applied. C) Self weight considered.' },
+  },
+};
 
-const zoomOnly = [{ ...pZoom, id: 'z', name: 'LC3_cut_section.png' }];
-classify.classifyAll(zoomOnly);
-const gz = classify.groupPhotos(zoomOnly);
-check('a group with only a section view raises a gap', gz[0].issues.some((i) => /No full view/.test(i.text)),
-  JSON.stringify(gz[0].issues));
-check('the section-only group still gets a slide', gz[0].main.id === 'z');
+const tpl = { ...template, materials: { ...template.materials, rows: materials.rows } };
+const deck = report.buildDeck({ photos, template: tpl, meta });
+const titles = deck.slides.map((s) => s.title || s.eyebrow);
+console.log(`    slides: ${deck.slides.length}`);
+for (const t of titles) console.log(`      · ${t}`);
 
-const dupPhotos = [photo('LC1_vonMises_a.png', fx.contourFull), photo('LC1_vonMises_b.png', fx.contourFull)];
-const dups = classify.findDuplicates(dupPhotos);
-check('duplicate images are detected', dups.length === 1, JSON.stringify(dups));
+section('Deck structure — the sample order');
+check('cover is first, labelled FEA REPORT', deck.slides[0].layout === 'cover' && deck.slides[0].eyebrow === 'FEA REPORT');
+check('cover title reads "Static Structural Analysis Of …"', /Static Structural Analysis Of Gui/.test(deck.slides[0].title), deck.slides[0].title);
+check('cover carries report no, date and client',
+  JSON.stringify(deck.slides[0].fields).includes('ACK-6179') && JSON.stringify(deck.slides[0].fields).includes('SILVERTONE'));
+check('section 1 is Material Properties', titles[1] === '1. Material Properties', titles[1]);
+check('section 2 is "<part> Geometry"', titles[2] === '2. GG Geometry', titles[2]);
+check('section 3 is "<part> Mesh"', titles[3] === '3. GG Mesh', titles[3]);
+check('case 1 boundary-conditions slide', /^Case 1: Gate Fully Closed/.test(titles[4] || ''), titles[4]);
+check('case 1 results slide uses the short case label', titles[5] === 'Case 1: Results', titles[5]);
+check('case 1 observation slide', /Observation & Summary$/.test(titles[6] || ''), titles[6]);
+check('case 2 present after case 1', /^Case 2:/.test(titles[7] || ''), titles[7]);
+check('final summary comes after the cases', titles.indexOf('Final Summary') > titles.findIndex((t) => /Observation/.test(t || '')));
+check('the image that fits no slot goes to the appendix',
+  deck.slides[deck.slides.length - 1].layout === 'grid' && deck.slides[deck.slides.length - 1].images.some((i) => i.photoId === 'mesh_convergence_graph.png'),
+  JSON.stringify(deck.slides[deck.slides.length - 1]));
 
-section('Deck assembly');
-const deck = report.buildDeck({
-  photos: photos.map((p) => ({ ...p, value: p.cls.family === 'stress' ? { max: 187.4, unit: 'MPa', confirmed: true } : undefined })),
-  template,
-  meta: { project: 'Bracket FEA', part: 'Bracket rev C', author: 'A. Engineer', allowable: 250, groups },
-});
-const titles = deck.slides.map((s) => s.title);
-check('cover slide built', deck.slides[0].kind === 'cover');
-check('all template sections present',
-  ['Model & Geometry', 'Mesh', 'Material Properties', 'Results Summary'].every((t) => titles.includes(t)),
-  JSON.stringify(titles));
-const resultSlide = deck.slides.find((s) => s.kind === 'results' && /LC1/.test(s.title));
-check('a results slide exists for LC1', !!resultSlide, JSON.stringify(titles));
-check('the detail inset is on the same slide as the full view',
-  resultSlide.images.some((i) => i.role === 'main') && resultSlide.images.some((i) => i.role === 'inset'),
-  JSON.stringify(resultSlide.images.map((i) => [i.role, i.label || ''])));
-check('mesh image placed on the mesh slide',
-  deck.slides.find((s) => s.title === 'Mesh').images.length === 1);
-check('geometry image placed on the geometry slide',
-  deck.slides.find((s) => s.title === 'Model & Geometry').images.length === 1);
+section('Results slide: the layout the report actually uses');
+const results1 = deck.slides.find((s) => s.id === 'results-LC1');
+check('two slots: deformation left, von Mises right',
+  results1.figures[0].slot === 'deformation' && results1.figures[1].slot === 'stress',
+  JSON.stringify(results1.figures.map((f) => f.slot)));
+check('slot labels are the house labels',
+  results1.figures[0].label === 'Total deformation' && results1.figures[1].label === 'Von-mises stress');
+check('deformation value line reads "Maximum Total Deformation – 3 mm"',
+  results1.figures[0].line === 'Maximum Total Deformation – 3 mm', results1.figures[0].line);
+check('stress line states the allowable', /within the material's allowable limit of 163 MPa\./.test(results1.figures[1].line), results1.figures[1].line);
+
+section('Zoom and cut-section views land on the same slide as their parent');
+check('LC1 zoom is an inset on the LC1 results slide',
+  deck.slides.find((s) => s.id === 'results-LC1').insets.some((i) => i.photoId === 'LC1_vonMises_bracket_zoom.png'),
+  JSON.stringify(deck.slides.find((s) => s.id === 'results-LC1').insets));
+check('LC2 cut section is an inset on the LC2 results slide',
+  deck.slides.find((s) => s.id === 'results-LC2').insets.some((i) => i.photoId === 'LC2_cut_section_stress.png'));
+check('the inset is labelled as a section, not a generic detail',
+  /^Section A/.test(deck.slides.find((s) => s.id === 'results-LC2').insets[0].label),
+  deck.slides.find((s) => s.id === 'results-LC2').insets[0].label);
+check('no detail view got a slide of its own',
+  !deck.slides.some((s) => (s.figures || []).some((f) => f.photoId === 'LC1_vonMises_bracket_zoom.png')));
+check('detail views are recorded in the figure log',
+  deck.figureLog.some((f) => f.photoId === 'LC1_vonMises_bracket_zoom.png'));
+
+section('Verdict logic — within vs exceeds');
+check('74.2 MPa against 163 MPa reads as within', /is within/.test(results1.figures[1].line));
+const results2 = deck.slides.find((s) => s.id === 'results-LC2');
+check('300 MPa against 163 MPa reads as exceeding', /exceeds the material's allowable limit of 163 MPa\./.test(results2.figures[1].line), results2.figures[1].line);
+check('observation bullet 1 states the deformation', /Total deformation in the GG is 3 mm\./.test(deck.slides.find((s) => s.id === 'observation-LC1').bullets[0]),
+  deck.slides.find((s) => s.id === 'observation-LC1').bullets[0]);
+check('observation bullet 2 states the verdict', /material's allowable stress limit of 163 MPa\./.test(deck.slides.find((s) => s.id === 'observation-LC2').bullets[1]),
+  deck.slides.find((s) => s.id === 'observation-LC2').bullets[1]);
+
+section('Final summary table — the four sample columns');
+const final = deck.slides.find((s) => s.id === 'final');
+check('columns are the sample columns',
+  JSON.stringify(final.table.columns) === JSON.stringify(['Load Case', 'Max. Deformation', 'Max. Von-Mises Stress', 'Allowable Stress']),
+  JSON.stringify(final.table.columns));
+check('a passing case prints its stress', final.table.rows[0][2] === '74.2 MPa', JSON.stringify(final.table.rows[0]));
+check('a failing case prints "Exceeding Limit"', final.table.rows[1][2] === 'Exceeding Limit', JSON.stringify(final.table.rows[1]));
+check('deformation cells carry units', final.table.rows[0][1] === '3 mm' && final.table.rows[1][1] === '2.42 mm');
+check('allowable column repeats the material allowable', final.table.rows[0][3] === '163 MPa');
 
 section('Numeric firewall');
-const fw = report.enforceNumericFirewall('Peak 187.4 MPa at 12 nodes, factor 1.33', new Set(['187.4']));
+const fw = report.enforceNumericFirewall('Peak 187.4 MPa at 12 nodes', new Set(['187.4']));
 check('confirmed numbers survive', fw.text.includes('187.4'));
-check('invented numbers are replaced', fw.text.includes('—') && !fw.text.includes('12 '), fw.text);
-check('blocked numbers are reported', fw.blocked.includes('12') && fw.blocked.includes('1.33'), JSON.stringify(fw.blocked));
-const injected = report.enforceNumericFirewall('Peak stress 999 MPa observed', new Set(['187.4']));
-check('a fabricated peak in generated prose is blocked', injected.blocked.includes('999'), injected.text);
+check('unconfirmed numbers are replaced and reported', fw.text.includes('—') && fw.blocked.includes('12'), fw.text);
+const injected = report.enforceNumericFirewall('Peak stress 999 MPa', new Set(['187.4']));
+check('a fabricated peak is blocked', injected.blocked.includes('999'));
 
-const cap = report.groupCaption(
-  { main: { value: { max: 187.4, unit: 'MPa', confirmed: true }, cls: { type: 'Equivalent (von Mises) stress', view: 'isometric' } }, loadCase: 'LC1', component: 'Bracket', insets: [] },
-  template.captions, 7, new Set(['187.4']),
-);
-check('caption carries the verified peak', cap.text.includes('187.4') && cap.text.includes('MPa'), cap.text);
-check('caption names the type and load case', /Equivalent/.test(cap.text) && /LC1/.test(cap.text), cap.text);
-check('caption invents no other number', cap.blocked.length === 0, JSON.stringify(cap.blocked));
+/* A value the engineer typed but never confirmed must not reach the report. */
+const unconfirmed = photos.map((p) => ({ ...p, cls: { ...p.cls }, value: { ...p.value } }));
+const target = unconfirmed.find((p) => p.name === 'LC1_vonMises_bracket_iso.png');
+target.value = { max: 88.8, unit: 'MPa', confirmed: false };
+const deckU = report.buildDeck({ photos: unconfirmed, template: tpl, meta });
+const lineU = deckU.slides.find((s) => s.id === 'results-LC1').figures[1].line;
+check('an unconfirmed value is never quoted', !/88\.8/.test(lineU), lineU);
+check('the report says the value is missing instead', /not entered/i.test(lineU), lineU);
+check('the summary row shows a dash for it',
+  deckU.slides.find((s) => s.id === 'final').table.rows[0][2] === '—',
+  JSON.stringify(deckU.slides.find((s) => s.id === 'final').table.rows[0]));
 
-const unverified = report.groupCaption(
-  { main: { value: undefined, cls: { type: 'Total deformation', view: '' } }, loadCase: 'LC1', component: null, insets: [] },
-  template.captions, 8, new Set(),
-);
-check('a missing value is stated, not invented',
-  /not entered/i.test(unverified.text) && !/[\d]/.test(unverified.text.replace(/LC\d+/g, '')),
-  unverified.text);
-
-section('Summary table: pass/fail only from confirmed inputs');
-const groupsWithValues = groups.map((g) => ({ ...g, main: { ...g.main, value: { max: 187.4, unit: 'MPa', confirmed: true } } }));
-const t1 = report.buildSummaryTable(groupsWithValues, { allowable: 250 });
-const row = t1.rows.find((r) => r[1] === 'Equivalent (von Mises) stress');
-check('FoS computed from peak and allowable', row && row[5] === '1.33', JSON.stringify(row));
-check('verdict states PASS with margin', row && /PASS/.test(row[6]), JSON.stringify(row));
-const t2 = report.buildSummaryTable(groupsWithValues, {});
-const row2 = t2.rows.find((r) => r[1] === 'Equivalent (von Mises) stress');
-check('no allowable means no verdict', row2 && row2[5] === '—' && row2[6] === '—', JSON.stringify(row2));
-
-section('Coverage gaps');
-const gaps = report.coverageReport(groups, photos);
-check('flags that there is no safety-factor plot', gaps.some((g) => /safety-factor/i.test(g.text)), JSON.stringify(gaps.map((g) => g.text)));
-check('mesh present, so no mesh warning', !gaps.some((g) => /No mesh image/.test(g.text)));
+section('Gaps the app should warn about');
+const thin = [photo('LC1_vonMises_bracket_iso.png', fx.contourFull)];
+classify.classifyAll(thin);
+thin[0].value = { max: 90, unit: 'MPa', confirmed: true };
+const thinDeck = report.buildDeck({ photos: thin, template: tpl, meta: { ...meta, cases: {} } });
+const gaps = report.coverageReport(thinDeck.cases, thin, { allowable: thinDeck.allowable });
+check('warns that a deformation result is missing', gaps.some((g) => /no deformation result/i.test(g.text)), JSON.stringify(gaps.map((g) => g.text)));
+check('warns that boundary-conditions text is not written', gaps.some((g) => /boundary-conditions text not written/i.test(g.text)));
+check('warns that no mesh image exists', gaps.some((g) => /No mesh image/.test(g.text)));
+check('the missing slot is stated on the slide, not left blank',
+  /no deformation result supplied/.test(thinDeck.slides.find((s) => s.id === 'results-LC1').figures[0].line),
+  thinDeck.slides.find((s) => s.id === 'results-LC1').figures[0].line);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

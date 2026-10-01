@@ -1,83 +1,133 @@
 {
-  "name": "Default FEA report",
-  "version": 1,
-  "note": "This file IS the template. When you hand over the real PPT/PDF, change this file and the engine re-maps without code changes. Every section, caption and rule below is editable.",
+  "name": "MWI FEA report — matched to sample.pptx / 6203_KCP_MLD.pptx",
+  "version": 2,
+  "derivedFrom": {
+    "repo": "https://github.com/YASHj12/report",
+    "files": ["sample.pptx", "6203_KCP_MLD.pptx", "sample.pdf", "Sample_1.pdf"],
+    "notes": "Section order, table columns, rule lines, caption wording, colours and fonts were read out of the two decks. Sample_1.pdf is an older numbered variant; its wording is kept in 'phrasesLegacy' below so the style can be switched without touching code."
+  },
   "slideSize": { "w": 12192000, "h": 6858000, "label": "16:9" },
+
   "theme": {
     "background": "#FFFFFF",
-    "text": "#14171C",
-    "accent": "#B4232A",
-    "muted": "#6B7280",
-    "font": "Calibri"
+    "text": "#23282D",
+    "title": "#1B304E",
+    "accent": "#2A6FA6",
+    "panel": "#F2F5F8",
+    "muted": "#5A6472",
+    "font": "Arial",
+    "titleSize": 2500,
+    "headingSize": 1400,
+    "bodySize": 1100,
+    "captionSize": 1000
   },
+
   "meta": {
-    "project": "",
-    "part": "",
+    "reportNo": "MWI/FEA/ACK-XXXX/01",
+    "date": "",
     "client": "",
-    "author": "",
-    "revision": "A",
-    "software": "Ansys Mechanical"
+    "part": "",
+    "partShort": "",
+    "analysis": "Static Structural Analysis",
+    "unitsLine": "Units: Length = mm, Mass = tonnes, Time = second, Force = Newton",
+    "allowableHeading": "Allowable Von-Mises Stress:",
+    "allowableFormula": "σall = Syt / FOS",
+    "fos": 1.3,
+    "allowableRounding": "floor"
   },
+
+  "materials": {
+    "columns": [
+      "Material",
+      "Item",
+      "Young's Modulus (MPa)",
+      "Poisson's Ratio",
+      "Density (t/mm³)",
+      "Yield Stress (MPa)",
+      "Allowable Von-Mises Stress (MPa)"
+    ],
+    "rows": [],
+    "note": "Allowable is computed as the yield stress divided by FOS, rounded per meta.allowableRounding. Edit the yield stress and the allowable follows."
+  },
+
   "sections": [
-    { "id": "cover", "kind": "cover", "title": "Finite Element Analysis Report" },
+    { "id": "cover", "kind": "cover" },
+    { "id": "materials", "kind": "materials", "title": "1. Material Properties" },
     {
-      "id": "scope", "kind": "bullets", "title": "Scope & Objective",
-      "bullets": [
-        "Objective — what is being evaluated and why.",
-        "Design decision this analysis supports.",
-        "Acceptance criteria (allowable stress, displacement limit, safety factor).",
-        "Software and version used."
-      ]
+      "id": "geometry", "kind": "figures",
+      "title": "2. {partShort} Geometry",
+      "accepts": { "types": ["Geometry", "Model"], "capacity": 2 },
+      "labelFromView": true
     },
     {
-      "id": "geometry", "kind": "figures", "title": "Model & Geometry",
-      "accepts": { "types": ["Geometry", "Model"], "capacity": 2, "preferViews": ["isometric", "full", "front"] },
-      "bullets": ["Geometry source and revision.", "Simplifications and assumptions.", "Units."]
+      "id": "mesh", "kind": "figures",
+      "title": "3. {partShort} Mesh",
+      "accepts": { "types": ["Mesh"], "capacity": 1 }
     },
-    {
-      "id": "materials", "kind": "table", "title": "Material Properties",
-      "columns": ["Material", "E (MPa)", "Poisson ν", "Yield (MPa)", "Ultimate (MPa)", "Density (kg/m³)"],
-      "rows": [["", "", "", "", "", ""]],
-      "note": "The allowable is the number any pass/fail statement is judged against. It is entered, never inferred from an image."
-    },
-    {
-      "id": "mesh", "kind": "figures", "title": "Mesh",
-      "accepts": { "types": ["Mesh"], "capacity": 2 },
-      "bullets": ["Element type and order.", "Global element size.", "Local refinement in critical regions.", "Quality metrics (aspect ratio, skewness, Jacobian).", "Mesh convergence study reference."]
-    },
-    {
-      "id": "bc", "kind": "figures", "title": "Boundary Conditions & Loads",
-      "accepts": { "types": ["Boundary conditions", "Loads"], "capacity": 2 }
-    },
-    { "id": "results", "kind": "results", "title": "Results", "dynamic": "per-group" },
-    { "id": "summary", "kind": "table", "title": "Results Summary", "dynamic": "summary" },
-    {
-      "id": "conclusions", "kind": "bullets", "title": "Conclusions & Recommendations",
-      "bullets": [
-        "Whether the design passes against the stated acceptance criteria.",
-        "The governing load case and failure mode.",
-        "Remaining margin.",
-        "Recommendations and open items."
-      ]
-    },
+    { "id": "cases", "kind": "cases" },
+    { "id": "final", "kind": "finalSummary", "title": "Final Summary" },
     { "id": "appendix", "kind": "appendix", "title": "Appendix — Source Images" }
   ],
-  "captions": {
-    "figures": "{type}{loadcase}{component}",
-    "results": "{type}{loadcase}{component} — peak {max} {unit}",
-    "detailInset": "{label}",
-    "appendix": "{filename}"
+
+  "case": {
+    "intro": {
+      "title": "{caseLabel}",
+      "bcHeading": "Boundary Conditions",
+      "bcPlaceholder": "Describe the boundary conditions here. Write them as A) … B) … C) … to match the sample reports.",
+      "requireBcImage": true
+    },
+    "results": {
+      "title": "{caseLabel}: Results",
+      "slots": ["deformation", "stress"],
+      "slotLabels": { "deformation": "Total deformation", "stress": "Von-mises stress" },
+      "detailStrip": true,
+      "detailLabel": "{kind} {letter} — {view}"
+    },
+    "observation": {
+      "title": "{caseLabel}: Observation & Summary",
+      "bullets": [
+        "Total deformation in the {partShort} is {deformation}.",
+        "Von-Mises stress in the {partShort} {stressVerdict}"
+      ]
+    }
   },
+
+  "phrases": {
+    "deformationLine": "Maximum Total Deformation – {value}",
+    "stressWithin": "The stress is within the material's allowable limit of {allowable}.",
+    "stressExceeds": "The stress exceeds the material's allowable limit of {allowable}.",
+    "observationStressWithin": "is within the material's allowable stress limit of {allowable}.",
+    "observationStressExceeds": "exceeds the material's allowable stress limit of {allowable}.",
+    "summaryWithin": "{value}",
+    "summaryExceeds": "Exceeding Limit",
+    "valueMissing": "value not entered",
+    "noResultSupplied": "no {slot} result supplied for this case"
+  },
+
+  "phrasesLegacy": {
+    "note": "Wording used by Sample_1.pdf (numbered sections, 'i.e.' style). Set phrases to this block to switch house style.",
+    "deformationLine": "Max. Total Deformation = {value}",
+    "stressWithin": "Stresses in the {partShort} are within the material's allowable stress limit (i.e. {allowable}).",
+    "stressExceeds": "Stresses in the {partShort} exceed the material's allowable stress limit (i.e. {allowable}).",
+    "observationStressWithin": "Von-mises Stresses in the {partShort} assembly are well within the allowable stress limit of {allowable}.",
+    "observationStressExceeds": "Von-mises Stresses in the {partShort} assembly exceed the allowable stress limit of {allowable}.",
+    "summaryWithin": "{value}",
+    "summaryExceeds": "Exceeding Limit",
+    "valueMissing": "value not entered",
+    "noResultSupplied": "no {slot} result supplied for this case"
+  },
+
   "detailRules": {
     "keywords": {
-      "zoom": ["zoom", "zoomed", "detail", "closeup", "close-up", "close", "local", "enlarged", "magnified", "scaledview", "inset"],
-      "section": ["section", "sec", "cut", "slice", "half", "clip", "sect", "crosssection"]
+      "zoom": ["zoom", "zoomed", "detail", "closeup", "close", "local", "enlarged", "magnified", "inset", "callout"],
+      "section": ["section", "cut", "slice", "half", "clip", "crosssection"]
     },
     "filledFrameThreshold": 0.1,
     "requireFullViewPerGroup": true,
     "maxInsetsPerSlide": 3,
     "putDetailsOnParentSlide": true
   },
+
   "review": {
     "confirmBelow": 0.7,
     "blockExportOnUnconfirmedValues": true

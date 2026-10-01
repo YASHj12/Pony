@@ -1,4 +1,4 @@
-/* End-to-end: images → deck → .pptx, then validate the package with python3.
+/* End-to-end against the real template: screenshots → deck → .pptx → validated.
  *   node test/pptx.test.mjs
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { buildPptx } from '../public/js/pptx.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.join(here, '..', 'out');
 mkdirSync(outDir, { recursive: true });
-const outFile = path.join(outDir, 'test-report.pptx');
+const outFile = path.join(outDir, 'sample-report.pptx');
 
 const template = JSON.parse(readFileSync(path.join(here, '..', 'templates', 'fea-report.json'), 'utf8'));
 
@@ -30,49 +30,66 @@ function photo(name, img) {
   return { id: name, name, cv: signals, kind: cv.inferKind(signals), hash: cv.dHash(img.data, img.width, img.height) };
 }
 
-/* a realistic drop: geometry, mesh, two load cases, each with a detail view */
+/* A drop that looks like the real thing: two cases, one passing, one failing. */
 const photos = [
-  photo('bracket_geometry_iso.png', fx.geometryImage),
+  photo('GG_geometry_top.png', fx.geometryImage),
+  photo('GG_geometry_iso.png', fx.geometryImage),
   photo('LC1_mesh_fine.png', fx.meshImage),
-  photo('LC1_vonMises_bracket_iso.png', fx.contourFull),
-  photo('LC1_vonMises_bracket_zoom.png', fx.contourZoomed),
-  photo('LC2_vonMises_bracket_iso.png', fx.contourFull),
+  photo('LC1_boundary_conditions.png', fx.meshImage),
+  photo('LC1_total_deformation.png', fx.contourFull),
+  photo('LC1_vonMises_iso.png', fx.contourFull),
+  photo('LC1_vonMises_zoom.png', fx.contourZoomed),
+  photo('LC2_boundary_conditions.png', fx.meshImage),
+  photo('LC2_total_deformation.png', fx.contourFull),
+  photo('LC2_vonMises_iso.png', fx.contourFull),
   photo('LC2_cut_section.png', fx.contourFull),
 ];
 classify.classifyAll(photos);
-photos[2].value = { max: 187.4, unit: 'MPa', confirmed: true };
-photos[4].value = { max: 231.8, unit: 'MPa', confirmed: true };
+photos[4].value = { max: 3, unit: 'mm', confirmed: true };
+photos[5].value = { max: 74.2, unit: 'MPa', confirmed: true };
+photos[8].value = { max: 4, unit: 'mm', confirmed: true };
+photos[9].value = { max: 196, unit: 'MPa', confirmed: true };
 
-const groups = classify.groupPhotos(photos);
+const tpl = {
+  ...template,
+  materials: { ...template.materials, rows: [['IS 2062', 'Gate', '191400', '0.3', '7.8E-9', '213', '']] },
+};
 
-console.log('building deck + pptx…');
 const deck = report.buildDeck({
-  photos, template,
+  photos, template: tpl,
   meta: {
-    project: 'Bracket Assembly — Static Structural',
-    part: 'Bracket rev C', client: 'Internal', author: 'FEA Team', revision: 'B',
-    allowable: 250, date: '2026-10-01', groups,
+    reportNo: 'MWI/FEA/ACK-6179/01', date: '4th Sept 2026', client: 'SILVERTONE',
+    part: 'Guillotine Gate & Frame', partShort: 'GG',
+    analysis: 'Static Structural Analysis', fos: 1.3, allowableRounding: 'floor',
+    cases: {
+      LC1: { description: 'Gate Fully Closed (Self Weight + Pressure)', bcText: 'A) Roller contact area is fixed. B) Design pressure 621.47 mmWC applied which is 0.00609 MPa. C) Self weight considered.' },
+      LC2: { description: 'Gate Partially Closed (Self Weight + Pressure)', bcText: 'A) Roller contact is fixed. B) Design pressure 621.47 mmWC applied. C) Self weight considered.' },
+    },
   },
 });
 
+console.log(`deck: ${deck.slides.length} slides, allowable ${deck.allowable} MPa`);
+for (const s of deck.slides) console.log(`   ${String(s.layout).padEnd(11)} ${s.title || ''}`);
+
 const media = {};
 for (const p of photos) {
-  media[p.id] = { bytes: fx.pngBytes(160, 120), ext: 'png', width: 160, height: 120 };
+  media[p.id] = { bytes: fx.pngBytes(200, 150), ext: 'png', width: 200, height: 150 };
 }
 
 const { bytes, slideCount, mediaCount } = buildPptx({
   deck, media,
-  meta: { project: 'Bracket Assembly', author: 'FEA Team' },
+  meta: { project: `FEA Report — ${tpl.meta.part}`, author: 'MWA FEA' },
   theme: template.theme,
+  size: template.slideSize,
 });
 writeFileSync(outFile, bytes);
 
 console.log('\nGenerated file');
 check('pptx written', bytes.length > 0);
-check('file has the ZIP signature', bytes[0] === 0x50 && bytes[1] === 0x4b, `got ${bytes[0]},${bytes[1]}`);
+check('ZIP signature present', bytes[0] === 0x50 && bytes[1] === 0x4b);
 check('every deck slide became a slide', slideCount === deck.slides.length, `${slideCount} vs ${deck.slides.length}`);
-check('media deduplicated to the number of images used', mediaCount === photos.length, String(mediaCount));
-check('file size is plausible', bytes.length > 20000, `${(bytes.length / 1024).toFixed(0)} KB`);
+check('media deduplicated', mediaCount === photos.length, String(mediaCount));
+check('slide count matches the sample decks (11)', slideCount === 11, String(slideCount));
 
 console.log('\npython3 structural validation');
 let validatorOutput = '';
@@ -87,28 +104,21 @@ process.stdout.write(validatorOutput.split('\n').map((l) => (l ? `  ${l}` : l)).
 check('validator ran clean', validatorCode === 0, validatorOutput);
 check('no failing checks reported', !/FAIL:/.test(validatorOutput), validatorOutput);
 
-console.log('\nContent spot checks');
-const relText = (() => {
-  // re-open the zip with python for a couple of assertions about content
-  const script = `
-import sys, zipfile
-z = zipfile.ZipFile(sys.argv[1])
-slides = [n for n in z.namelist() if n.startswith('ppt/slides/slide') and n.endswith('.xml')]
-print('SLIDES', len(slides))
-print('IMAGES', len([n for n in z.namelist() if n.startswith('ppt/media/')]))
-for name in sorted(slides):
-    xml = z.read(name).decode('utf8')
-    print(name, 'TEXT_SAMPLES', xml.count('a:t'), 'PICS', xml.count('<p:pic>'), 'TABLES', xml.count('a:tbl>'))
-`;
-  return execFileSync('python3', ['-c', script, outFile], { encoding: 'utf8' });
-})();
-console.log(relText.split('\n').filter(Boolean).map((l) => `  ${l}`).join('\n'));
+console.log('\nContent inside the generated slides');
+const dump = execFileSync('python3', [path.join(here, 'dump_pptx.py'), outFile], { encoding: 'utf8' });
+process.stdout.write(dump.split('\n').map((l) => (l ? `  ${l}` : l)).join('\n'));
 
-const pictureTotal = [...relText.matchAll(/PICS (\d+)/g)].reduce((n, m) => n + Number(m[1]), 0);
-const textTotal = [...relText.matchAll(/TEXT_SAMPLES (\d+)/g)].reduce((n, m) => n + Number(m[1]), 0);
-check('pictures were placed in the deck', pictureTotal >= photos.length, String(pictureTotal));
-check('text was written (titles, captions, tables)', textTotal > 40, String(textTotal));
-check('the summary table exists', /TABLES [1-9]/.test(relText), relText);
+check('cover carries FEA REPORT and the report number', /FEA REPORT/.test(dump) && /ACK-6179/.test(dump));
+check('material table row made it into the deck', /IS 2062/.test(dump) && /163/.test(dump));
+check('results slides carry the house labels', /Total deformation/.test(dump) && /Von-mises stress/.test(dump));
+check('the deformation value line is present', /Maximum Total Deformation/.test(dump));
+check('the stress verdict sentence is present', /allowable limit of 163 MPa/.test(dump));
+check('detail insets are on the results slides', /Section A|Detail A/.test(dump));
+check('final summary table present with the verdict', /Exceeding Limit/.test(dump));
+check('boundary conditions text present', /Roller contact area is fixed/.test(dump));
+
+const pictureTotal = [...dump.matchAll(/PICS (\d+)/g)].reduce((n, m) => n + Number(m[1]), 0);
+check('all 11 images placed', pictureTotal >= 11, String(pictureTotal));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 console.log(`file: ${outFile}`);

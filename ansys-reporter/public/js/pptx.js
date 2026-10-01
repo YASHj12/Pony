@@ -62,7 +62,7 @@ function picture({ id, rId, x, y, w, h, name }) {
     `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln w="6350"><a:solidFill><a:srgbClr val="D5D8DE"/></a:solidFill></a:ln></p:spPr></p:pic>`;
 }
 
-function tableShape({ id, x, y, w, h, table, font }) {
+function tableShape({ id, x, y, w, h, table, font, headerFill = 'F0F1F4', border = 'D5D8DE' }) {
   const cols = table.columns || [];
   const rows = table.rows || [];
   if (!cols.length) return '';
@@ -72,11 +72,11 @@ function tableShape({ id, x, y, w, h, table, font }) {
   const grid = cols.map((_, i) => `<a:gridCol w="${i === cols.length - 1 ? w - colW * (cols.length - 1) : colW}"/>`).join('');
 
   const cell = (text, header) => {
-    const fill = header ? 'F0F1F4' : 'FFFFFF';
+    const fill = header ? headerFill : 'FFFFFF';
     return `<a:tc><a:txBody><a:bodyPr lIns="45720" rIns="45720" tIns="22860" bIns="22860" anchor="ctr"/><a:lstStyle/>` +
       `<a:p><a:pPr algn="l"/><a:r>${runProps({ sz: header ? 1000 : 1000, b: header, color: header ? '3C4452' : '14171C', font })}<a:t>${esc(text)}</a:t></a:r></a:p>` +
       `</a:txBody><a:tcPr marL="45720" marR="45720" marT="22860" marB="22860"><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>` +
-      `<a:lnB w="6350"><a:solidFill><a:srgbClr val="D5D8DE"/></a:solidFill></a:lnB></a:tcPr></a:tc>`;
+      `<a:lnB w="6350"><a:solidFill><a:srgbClr val="${border}"/></a:solidFill></a:lnB></a:tcPr></a:tc>`;
   };
 
   const trs = [`<a:tr h="${rowH}">${cols.map((c) => cell(c, true)).join('')}</a:tr>`]
@@ -120,159 +120,186 @@ function resolveImages(slide, images) {
 }
 
 function slideBody(slide, ctx) {
-  const { images, font, color, accent } = ctx;
+  const { images, font, color, accent, theme: th } = ctx;
+  const titleColor = th.title || color;
+  const panelColor = th.panel || 'F2F5F8';
   const shapes = [];
   let id = 2;
   const nextId = () => ++id;
+  const sizes = {
+    title: th.titleSize || 2500,
+    heading: th.headingSize || 1400,
+    body: th.bodySize || 1100,
+    caption: th.captionSize || 1000,
+  };
 
-  const titleText = slide.title || '';
-
-  if (slide.kind === 'cover') {
-    shapes.push(textBox({
-      id: nextId(), x: M, y: Math.round(H * 0.26), w: CONTENT_W, h: 1200000,
-      paras: [{ text: titleText, sz: 3200, b: true, color, font }],
-    }));
+  /* ── cover ─────────────────────────────────────────── */
+  if (slide.layout === 'cover') {
     shapes.push(`<p:sp><p:nvSpPr><p:cNvPr id="${nextId()}" name="Accent"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
-      `<p:spPr><a:xfrm><a:off x="${M}" y="${Math.round(H * 0.24)}"/><a:ext cx="1371600" cy="45720"/></a:xfrm>` +
+      `<p:spPr><a:xfrm><a:off x="${M}" y="${Math.round(H * 0.30)}"/><a:ext cx="1371600" cy="45720"/></a:xfrm>` +
       `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${hex(accent)}"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr>` +
       `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`);
-    if (slide.subtitle) {
-      shapes.push(textBox({ id: nextId(), x: M, y: Math.round(H * 0.42), w: CONTENT_W, h: 600000,
-        paras: [{ text: slide.subtitle, sz: 1800, color: '3C4452', font }] }));
-    }
+    shapes.push(textBox({ id: nextId(), x: M, y: Math.round(H * 0.33), w: CONTENT_W, h: 400000,
+      paras: [{ text: slide.eyebrow || '', sz: 1800, b: true, color: titleColor, font }] }));
+    shapes.push(textBox({ id: nextId(), x: M, y: Math.round(H * 0.41), w: Math.round(CONTENT_W * 0.82), h: 1100000,
+      paras: [{ text: slide.title || '', sz: sizes.title, b: true, color: titleColor, font }] }));
     const fields = slide.fields || [];
-    const half = Math.ceil(fields.length / 2);
-    const cols = [fields.slice(0, half), fields.slice(half)];
-    cols.forEach((col, ci) => {
-      if (!col.length) return;
+    if (fields.length) {
       shapes.push(textBox({
-        id: nextId(), x: M + ci * Math.round(CONTENT_W / 2), y: Math.round(H * 0.55), w: Math.round(CONTENT_W / 2) - 228600, h: 1200000,
-        paras: col.flatMap(([k, v]) => ([
-          { text: k.toUpperCase(), sz: 900, b: true, color: '8A9099', font },
-          { text: String(v), sz: 1200, color, font, spaceBefore: 0 },
+        id: nextId(), x: M, y: Math.round(H * 0.62), w: Math.round(CONTENT_W * 0.6), h: 1400000,
+        paras: fields.flatMap(([k, v]) => ([
+          { text: String(v), sz: sizes.body + 100, color, font, spaceBefore: 600 },
+          { text: k, sz: 800, b: true, color: th.muted || '5A6472', font },
         ])),
       }));
-    });
+    }
+    if (slide.logo && images[slide.logo]) {
+      const p = { ...images[slide.logo], id: slide.logo };
+      const box = { x: W - M - 2286000, y: M, w: 2286000, h: 1371600 };
+      const r = fitContain(box, p.width / p.height);
+      shapes.push(picture({ id: nextId(), rId: ctx.relFor(p.id), x: r.x, y: r.y, w: r.w, h: r.h, name: 'Logo' }));
+    }
     return shapes;
   }
 
-  /* standard title bar */
-  shapes.push(textBox({ id: nextId(), x: M, y: M, w: CONTENT_W, h: TITLE_H, paras: [{ text: titleText, sz: 2000, b: true, color, font }], anchor: 'b' }));
+  /* ── standard title bar ────────────────────────────── */
+  shapes.push(textBox({ id: nextId(), x: M, y: M - 45720, w: CONTENT_W, h: TITLE_H, paras: [{ text: slide.title || '', sz: sizes.title, b: true, color: titleColor, font }], anchor: 'b' }));
   shapes.push(`<p:sp><p:nvSpPr><p:cNvPr id="${nextId()}" name="Rule"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
-    `<p:spPr><a:xfrm><a:off x="${M}" y="${M + TITLE_H}" /><a:ext cx="${CONTENT_W}" cy="12700"/></a:xfrm>` +
-    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="D5D8DE"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr>` +
+    `<p:spPr><a:xfrm><a:off x="${M}" y="${M + TITLE_H - 45720}"/><a:ext cx="${CONTENT_W}" cy="12700"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${hex(accent)}"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr>` +
     `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`);
 
-  if (slide.kind === 'bullets') {
+  /* ── bullets (observations) ────────────────────────── */
+  if (slide.layout === 'bullets') {
+    const paras = (slide.bullets || []).map((b, i) => (
+      slide.bulletStyle === 'paragraph'
+        ? { text: b, sz: sizes.body + 200, color, font, spaceBefore: i ? 1200 : 0 }
+        : { text: b, sz: sizes.body + 100, bullet: true, color, font, spaceBefore: i ? 600 : 0 }
+    ));
+    shapes.push(textBox({ id: nextId(), x: M + 45720, y: CONTENT_TOP + 228600, w: CONTENT_W - 91440, h: CONTENT_H - 457200, paras }));
+    return shapes;
+  }
+
+  /* ── table (+ notes) ───────────────────────────────── */
+  if (slide.layout === 'table') {
+    const rows = slide.table?.rows?.length || 1;
+    const tableH = Math.min(CONTENT_H * (slide.notes?.length ? 0.62 : 0.95), 274638 * (rows + 1) + 137160);
+    shapes.push(tableShape({
+      id: nextId(), x: M, y: CONTENT_TOP, w: CONTENT_W, h: tableH,
+      table: slide.table, font, headerFill: panelColor, border: 'D5D8DE',
+    }));
+    const notes = (slide.notes || []).filter(Boolean);
+    if (notes.length) {
+      shapes.push(textBox({
+        id: nextId(), x: M, y: CONTENT_TOP + tableH + 182880, w: CONTENT_W, h: CONTENT_H - tableH - 228600,
+        paras: notes.map((n, i) => ({ text: n, sz: sizes.body, b: i === notes.length - 1 || i === notes.length - 3, color, font, spaceBefore: i ? 700 : 0 })),
+      }));
+    }
+    if (slide.empty) {
+      shapes.push(textBox({ id: nextId(), x: M, y: CONTENT_TOP + tableH + 182880, w: CONTENT_W, h: 300000,
+        paras: [{ text: slide.empty, sz: sizes.caption, i: true, color: th.muted || '5A6472', font }] }));
+    }
+    return shapes;
+  }
+
+  /* ── figure row: label above, value line below, details as a strip ── */
+  if (slide.layout === 'figure-row') {
+    const figs = (slide.figures || []).map((f) => ({ ...f, photo: f.photoId ? images[f.photoId] : null }));
+    const insets = (slide.insets || []).map((f) => ({ ...f, photo: f.photoId ? images[f.photoId] : null })).filter((f) => f.photo);
+    const n = Math.max(1, figs.length);
+    const gap = 228600;
+    const each = Math.floor((CONTENT_W - gap * (n - 1)) / n);
+    const labelH = 240000;
+    const lineH = figs.some((f) => f.line) ? 300000 : 0;
+    const stripH = insets.length ? Math.round(CONTENT_H * 0.3) : 0;
+    const mainH = CONTENT_H - stripH - (stripH ? 137160 : 0);
+    const imgH = mainH - labelH - lineH;
+
+    figs.forEach((f, i) => {
+      const x = M + i * (each + gap);
+      if (f.label) {
+        shapes.push(textBox({ id: nextId(), x, y: CONTENT_TOP, w: each, h: labelH,
+          paras: [{ text: f.label, sz: sizes.caption + 100, b: true, color: titleColor, font }] }));
+      }
+      if (f.photo) {
+        const box = { x, y: CONTENT_TOP + labelH, w: each, h: Math.max(300000, imgH) };
+        const r = fitContain(box, f.photo.width / f.photo.height);
+        shapes.push(picture({ id: nextId(), rId: ctx.relFor(f.photoId), x: r.x, y: r.y, w: r.w, h: r.h, name: f.label || 'Result' }));
+      } else {
+        shapes.push(textBox({
+          id: nextId(), x, y: CONTENT_TOP + labelH, w: each, h: Math.max(300000, imgH),
+          paras: [{ text: f.line || 'image missing', sz: sizes.body, i: true, color: th.muted || '5A6472', font }],
+          anchor: 'ctr',
+        }));
+      }
+      if (f.line && f.photo) {
+        shapes.push(textBox({ id: nextId(), x, y: CONTENT_TOP + labelH + imgH + 45720, w: each, h: lineH,
+          paras: [{ text: f.line, sz: sizes.caption, color, font }] }));
+      }
+    });
+
+    if (insets.length) {
+      const k = insets.length;
+      const eachInset = Math.floor((CONTENT_W - gap * (k - 1)) / k);
+      const y0 = CONTENT_TOP + mainH + 137160;
+      if (slide.stripLabel) {
+        shapes.push(textBox({ id: nextId(), x: M, y: y0 - 91440, w: CONTENT_W, h: 200000,
+          paras: [{ text: slide.stripLabel, sz: 800, b: true, color: th.muted || '5A6472', font }] }));
+      }
+      insets.forEach((f, i) => {
+        const x = M + i * (eachInset + gap);
+        const box = { x, y: y0 + 100000, w: eachInset, h: Math.max(300000, stripH - 320000) };
+        const r = fitContain(box, f.photo.width / f.photo.height);
+        shapes.push(picture({ id: nextId(), rId: ctx.relFor(f.photoId), x: r.x, y: r.y, w: r.w, h: r.h, name: f.label || 'Detail' }));
+        shapes.push(textBox({ id: nextId(), x, y: y0 + stripH - 180000, w: eachInset, h: 180000,
+          paras: [{ text: f.label || '', sz: 800, color: th.muted || '5A6472', font }] }));
+      });
+    }
+    return shapes;
+  }
+
+  /* ── figure + text (boundary conditions) ───────────── */
+  if (slide.layout === 'figure-text') {
+    const imgW = Math.round(CONTENT_W * (slide.photoId ? 0.6 : 0));
+    if (slide.photoId && images[slide.photoId]) {
+      const p = images[slide.photoId];
+      const r = fitContain({ x: M, y: CONTENT_TOP, w: imgW, h: CONTENT_H }, p.width / p.height);
+      shapes.push(picture({ id: nextId(), rId: ctx.relFor(slide.photoId), x: r.x, y: r.y, w: r.w, h: r.h, name: 'Boundary conditions' }));
+    } else if (slide.missingImage) {
+      shapes.push(textBox({ id: nextId(), x: M, y: CONTENT_TOP, w: Math.round(CONTENT_W * 0.6), h: 300000,
+        paras: [{ text: slide.missingImage, sz: sizes.body, i: true, color: th.muted || '5A6472', font }] }));
+    }
+    const tx = slide.photoId ? M + imgW + 274320 : M;
+    const tw = W - M - tx;
+    shapes.push(textBox({ id: nextId(), x: tx, y: CONTENT_TOP, w: tw, h: 300000,
+      paras: [{ text: slide.heading || '', sz: sizes.heading + 200, b: true, color: titleColor, font }] }));
     shapes.push(textBox({
-      id: nextId(), x: M, y: CONTENT_TOP + 91440, w: CONTENT_W, h: CONTENT_H - 182880,
-      paras: (slide.bullets || []).map((b) => ({ text: b, sz: 1400, bullet: true, color, font })),
+      id: nextId(), x: tx, y: CONTENT_TOP + 320000, w: tw, h: CONTENT_H - 320000,
+      paras: [{ text: slide.text || '', sz: sizes.body + 100, i: !!slide.placeholder, color: slide.placeholder ? (th.muted || '5A6472') : color, font }],
     }));
     return shapes;
   }
 
-  if (slide.kind === 'table') {
-    const tableH = Math.min(CONTENT_H, 274638 * ((slide.table?.rows?.length || 1) + 1) + 182880);
-    shapes.push(tableShape({ id: nextId(), x: M, y: CONTENT_TOP, w: CONTENT_W, h: tableH, table: slide.table, font }));
-    if (slide.note) {
-      shapes.push(textBox({ id: nextId(), x: M, y: CONTENT_TOP + tableH + 114300, w: CONTENT_W, h: 400000,
-        paras: [{ text: slide.note, sz: 1000, i: true, color: '8A9099', font }] }));
-    }
-    return shapes;
-  }
-
-  if (slide.kind === 'figures') {
-    const imgs = resolveImages(slide, images);
-    const hasBullets = (slide.bullets || []).length > 0 && imgs.length <= 1;
-    const mediaW = hasBullets ? Math.round(CONTENT_W * 0.58) : CONTENT_W;
-
-    if (imgs.length === 1) {
-      const p = imgs[0].photo;
-      const box = { x: M, y: CONTENT_TOP, w: mediaW, h: CONTENT_H - 340000 };
-      const r = fitContain(box, p.width / p.height);
-      shapes.push(picture({ id: nextId(), rId: ctx.relFor(p.id), x: r.x, y: r.y, w: r.w, h: r.h, name: imgs[0].label || slide.title }));
-      shapes.push(textBox({ id: nextId(), x: M, y: CONTENT_TOP + box.h + 45720, w: mediaW, h: 300000,
-        paras: [{ text: imgs[0].label || '', sz: 1000, color: '6B7280', font }] }));
-    } else {
-      const gap = 228600;
-      const each = Math.floor((CONTENT_W - gap * (imgs.length - 1)) / imgs.length);
-      imgs.forEach((im, i) => {
-        const p = im.photo;
-        const box = { x: M + i * (each + gap), y: CONTENT_TOP, w: each, h: CONTENT_H - 340000 };
-        const r = fitContain(box, p.width / p.height);
-        shapes.push(picture({ id: nextId(), rId: ctx.relFor(p.id), x: r.x, y: r.y, w: r.w, h: r.h, name: im.label || slide.title }));
-        shapes.push(textBox({ id: nextId(), x: box.x, y: CONTENT_TOP + box.h + 45720, w: each, h: 300000,
-          paras: [{ text: im.label || '', sz: 1000, color: '6B7280', font }] }));
-      });
-    }
-
-    if (hasBullets) {
-      const bx = M + mediaW + 228600;
-      shapes.push(textBox({
-        id: nextId(), x: bx, y: CONTENT_TOP, w: W - M - bx, h: CONTENT_H - 457200,
-        paras: (slide.bullets || []).map((b) => ({ text: b, sz: 1200, bullet: true, color, font })),
-      }));
-    }
-    return shapes;
-  }
-
-  if (slide.kind === 'results') {
-    const imgs = resolveImages(slide, images);
-    const main = imgs.find((i) => i.role === 'main') || imgs[0];
-    const insets = imgs.filter((i) => i !== main);
-    const captionH = 430000;
-    const bodyH = CONTENT_H - captionH - 45720;
-    const insetsW = insets.length ? Math.round(CONTENT_W * 0.3) : 0;
-    const gap = 182880;
-
-    if (main) {
-      const box = { x: M, y: CONTENT_TOP, w: CONTENT_W - insetsW - (insets.length ? gap : 0), h: bodyH };
-      const r = fitContain(box, main.photo.width / main.photo.height);
-      shapes.push(picture({ id: nextId(), rId: ctx.relFor(main.photo.id), x: r.x, y: r.y, w: r.w, h: r.h, name: 'Main result' }));
-    }
-
-    if (insets.length) {
-      const colX = W - M - insetsW;
-      const each = Math.floor((bodyH - gap * (insets.length - 1)) / insets.length);
-      insets.forEach((im, i) => {
-        const box = { x: colX, y: CONTENT_TOP + i * (each + gap), w: insetsW, h: each - 228600 };
-        const r = fitContain(box, im.photo.width / im.photo.height);
-        shapes.push(picture({ id: nextId(), rId: ctx.relFor(im.photo.id), x: r.x, y: r.y, w: r.w, h: r.h, name: im.label || 'Detail' }));
-        shapes.push(textBox({
-          id: nextId(), x: colX, y: CONTENT_TOP + i * (each + gap) + each - 220000, w: insetsW, h: 219456,
-          paras: [{ text: im.label || '', sz: 900, b: true, color: '6B7280', font }],
-        }));
-      });
-    }
-
-    if (slide.caption) {
-      shapes.push(textBox({
-        id: nextId(), x: M, y: H - M - captionH, w: CONTENT_W, h: captionH,
-        paras: [{ text: slide.caption, sz: 1100, color, font }],
-      }));
-    }
-    return shapes;
-  }
-
-  if (slide.kind === 'appendix') {
-    const imgs = resolveImages(slide, images);
+  /* ── grid (appendix) ───────────────────────────────── */
+  if (slide.layout === 'grid') {
+    const imgs = (slide.images || []).map((im) => ({ ...im, photo: images[im.photoId] })).filter((im) => im.photo);
     if (!imgs.length) {
-      shapes.push(textBox({ id: nextId(), x: M, y: CONTENT_TOP, w: CONTENT_W, h: 400000,
-        paras: [{ text: 'All supplied images were placed in the report — nothing left over.', sz: 1200, i: true, color: '6B7280', font }] }));
+      shapes.push(textBox({ id: nextId(), x: M, y: CONTENT_TOP, w: CONTENT_W, h: 300000,
+        paras: [{ text: 'All supplied images were placed in the report.', sz: sizes.body, i: true, color: th.muted || '5A6472', font }] }));
       return shapes;
     }
-    const cols = 3, rowsN = Math.ceil(imgs.length / cols);
+    const cols = 3;
+    const rowsN = Math.ceil(imgs.length / cols);
     const gap = 182880;
     const cw = Math.floor((CONTENT_W - gap * (cols - 1)) / cols);
     const ch = Math.floor((CONTENT_H - gap * (rowsN - 1)) / rowsN);
     imgs.forEach((im, i) => {
       const cx = M + (i % cols) * (cw + gap);
       const cy = CONTENT_TOP + Math.floor(i / cols) * (ch + gap);
-      const box = { x: cx, y: cy, w: cw, h: ch - 228600 };
-      const r = fitContain(box, im.photo.width / im.photo.height);
-      shapes.push(picture({ id: nextId(), rId: ctx.relFor(im.photo.id), x: r.x, y: r.y, w: r.w, h: r.h, name: im.label || 'Appendix' }));
-      shapes.push(textBox({ id: nextId(), x: cx, y: cy + ch - 228600, w: cw, h: 219456,
-        paras: [{ text: im.label || '', sz: 800, color: '6B7280', font }] }));
+      const r = fitContain({ x: cx, y: cy, w: cw, h: ch - 219456 }, im.photo.width / im.photo.height);
+      shapes.push(picture({ id: nextId(), rId: ctx.relFor(im.photoId), x: r.x, y: r.y, w: r.w, h: r.h, name: im.label || 'Appendix' }));
+      shapes.push(textBox({ id: nextId(), x: cx, y: cy + ch - 219456, w: cw, h: 200000,
+        paras: [{ text: im.label || '', sz: 800, color: th.muted || '5A6472', font }] }));
     });
     return shapes;
   }
@@ -454,7 +481,7 @@ export function buildPptx({ deck, media, meta = {}, theme: themeIn = {}, size = 
       return relMap.get(photoId);
     };
 
-    const shapes = slideBody(slide, { images: media, font, color, accent, relFor });
+    const shapes = slideBody(slide, { images: media, font, color, accent, theme: themeIn, relFor });
 
     imagesForSlide[i] = used;
     slideParts.push(XML_HEAD +
