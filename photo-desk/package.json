@@ -1,0 +1,11 @@
+{
+  "name": "photo-desk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Upload photos, get an honest review, an automatic classification and headlines for each shot. Runs on-device with no key, or with a vision API.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/analyze.test.mjs"
+  },
+  "engines": { "node": ">=18" }
+}

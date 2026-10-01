@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Photo Desk — review, classify &amp; caption your photos</title>
+<meta name="description" content="Upload photos, get an honest review, an automatic classification, and headlines written for each shot." />
+<link rel="stylesheet" href="/css/styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖼️</text></svg>" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="mark">PD</div>
+    <div>
+      <h1>Photo Desk</h1>
+      <p>Upload photos → honest review, classification, headlines.</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span id="modeBadge" class="badge badge-muted" title="Where the analysis happens">checking…</span>
+    <button id="settingsBtn" class="btn btn-ghost" aria-expanded="false">⚙︎ Settings</button>
+    <button id="exportBtn" class="btn btn-ghost" disabled>⭳ CSV</button>
+    <button id="clearBtn" class="btn btn-ghost" disabled>Clear all</button>
+  </div>
+</header>
+
+<!-- ───────────────────────── settings ───────────────────────── -->
+<section id="settings" class="panel" hidden>
+  <div class="panel-grid">
+    <div class="field">
+      <label for="provider">Vision provider</label>
+      <select id="provider">
+        <option value="auto">Auto (use .env key, else on-device)</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic Claude</option>
+      </select>
+      <small>Keys in <code>photo-desk/.env</code> are used automatically and never leave the server.</small>
+    </div>
+
+    <div class="field">
+      <label for="apiKey">API key (optional)</label>
+      <div class="row">
+        <input id="apiKey" type="password" placeholder="paste a key to use from this browser" autocomplete="off" spellcheck="false" />
+        <button id="revealKey" class="btn btn-ghost btn-sm" type="button" title="Show/hide">👁</button>
+      </div>
+      <small>Stored only in this browser's localStorage and sent only to your own Photo Desk server. Leave empty to run on-device.</small>
+    </div>
+
+    <div class="field">
+      <label for="model">Model</label>
+      <input id="model" type="text" placeholder="auto" spellcheck="false" />
+      <small>Blank = the provider default (Gemini 2.5 Flash, GPT-4o mini, Claude Sonnet).</small>
+    </div>
+
+    <div class="field">
+      <label for="goal">What is this for? <span class="muted">(optional)</span></label>
+      <input id="goal" type="text" placeholder="e.g. Instagram post for a coffee shop" />
+      <small>Steers the headlines and caption toward your use case.</small>
+    </div>
+
+    <div class="field field-wide">
+      <label for="categories">Categories to classify into</label>
+      <input id="categories" type="text" spellcheck="false" />
+      <small>Comma separated. The model picks the single best fit for each photo.</small>
+    </div>
+
+    <div class="field">
+      <label for="count">Headlines per photo</label>
+      <input id="count" type="number" min="1" max="8" value="5" />
+    </div>
+
+    <div class="field field-wide">
+      <label>Tones</label>
+      <div id="tones" class="chips"></div>
+    </div>
+  </div>
+
+  <div class="panel-foot">
+    <div class="field field-wide">
+      <label class="switch">
+        <input type="checkbox" id="clipToggle" />
+        <span>Smart on-device classification (works with no API key)</span>
+      </label>
+      <small id="clipNote">
+        Downloads a CLIP model into your browser once (about 90&nbsp;MB), then classifies photos locally — no key, no upload.
+      </small>
+      <div class="row" id="clipControls" hidden>
+        <select id="clipModel">
+          <option value="Xenova/clip-vit-base-patch32">CLIP ViT-B/32 — best accuracy (~90 MB)</option>
+          <option value="Xenova/mobileclip_s0">MobileCLIP-S0 — smaller (~55 MB)</option>
+        </select>
+        <button id="clipLoadBtn" class="btn btn-sm" type="button">Download &amp; enable</button>
+        <span id="clipStatus" class="muted"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── dropzone ───────────────────────── -->
+<section class="stage">
+  <div id="drop" class="dropzone" tabindex="0" role="button" aria-label="Add photos">
+    <div class="drop-inner">
+      <div class="drop-icon">🖼️</div>
+      <p class="drop-title">Drop photos here</p>
+      <p class="drop-sub">or click to browse · paste from clipboard · JPG, PNG, WebP, HEIC</p>
+      <p class="drop-note" id="dropNote">Nothing leaves your device unless a vision key is configured.</p>
+    </div>
+    <input id="fileInput" type="file" accept="image/*" multiple hidden />
+  </div>
+
+  <div id="progressWrap" class="progress-wrap" hidden>
+    <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+    <div class="progress-text"><span id="progressText">Working…</span><button id="cancelBtn" class="btn btn-ghost btn-sm" type="button">Stop</button></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── results ───────────────────────── -->
+<main id="results" class="results" hidden>
+  <div class="summary" id="summary"></div>
+  <div id="grid" class="grid"></div>
+</main>
+
+<section id="empty" class="empty">
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li><strong>Add photos.</strong> Drag a folder in, or paste screenshots straight from the clipboard.</li>
+    <li><strong>It looks at each one.</strong> Sharpness, exposure, contrast, colourfulness, framing and clutter — plus what the photo actually shows.</li>
+    <li><strong>You get the write-up.</strong> A category, a quality score with concrete fixes, five headlines written for your tone, a caption, tags, alt text and privacy flags.</li>
+  </ol>
+  <p class="muted small">
+    On-device mode needs no account and no key: it measures the photo and writes from those measurements, and with
+    “Smart on-device classification” on it also recognises what is in the picture. Adding a vision key upgrades the
+    writing to a full multimodal model. Same interface either way.
+  </p>
+</section>
+
+<footer class="foot">
+  <span>Photo Desk · runs entirely on your machine</span>
+  <span id="footStats" class="muted"></span>
+</footer>
+
+<div id="toast" class="toast" hidden></div>
+
+<div id="lightbox" class="lightbox" hidden><img id="lightboxImg" alt="" /></div>
+
+<template id="cardTpl">
+  <article class="card">
+    <div class="card-media">
+      <img class="thumb" alt="" loading="lazy" />
+      <span class="chip chip-score"></span>
+      <span class="chip chip-source"></span>
+    </div>
+    <div class="card-body">
+      <div class="card-head">
+        <h3 class="card-title"></h3>
+        <button class="btn btn-ghost btn-sm card-remove" title="Remove">✕</button>
+      </div>
+      <div class="chips card-tags"></div>
+
+      <div class="block">
+        <div class="block-head"><span>Headlines</span><span class="muted small card-hint">click to copy</span></div>
+        <ul class="headlines"></ul>
+      </div>
+
+      <details class="block">
+        <summary>Review &amp; details</summary>
+        <div class="details-body"></div>
+      </details>
+
+      <div class="card-actions">
+        <button class="btn btn-sm act-redo">↻ Redo</button>
+        <button class="btn btn-sm act-copy">⧉ Copy all</button>
+        <button class="btn btn-sm act-more">Details</button>
+      </div>
+    </div>
+  </article>
+</template>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

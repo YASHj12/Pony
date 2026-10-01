@@ -1,0 +1,4 @@
+# Secrets and local state
+.env
+node_modules/
+*.log
