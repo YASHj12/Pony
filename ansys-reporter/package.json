@@ -1,0 +1,13 @@
+{
+  "name": "ansys-report-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Drop Ansys result screenshots → classified, grouped and assembled into the company FEA report template, exported as a real .pptx. Runs entirely on-device.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/pipeline.test.mjs && node test/pptx.test.mjs",
+    "test:pipeline": "node test/pipeline.test.mjs",
+    "test:pptx": "node test/pptx.test.mjs"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,85 @@
+{
+  "name": "Default FEA report",
+  "version": 1,
+  "note": "This file IS the template. When you hand over the real PPT/PDF, change this file and the engine re-maps without code changes. Every section, caption and rule below is editable.",
+  "slideSize": { "w": 12192000, "h": 6858000, "label": "16:9" },
+  "theme": {
+    "background": "#FFFFFF",
+    "text": "#14171C",
+    "accent": "#B4232A",
+    "muted": "#6B7280",
+    "font": "Calibri"
+  },
+  "meta": {
+    "project": "",
+    "part": "",
+    "client": "",
+    "author": "",
+    "revision": "A",
+    "software": "Ansys Mechanical"
+  },
+  "sections": [
+    { "id": "cover", "kind": "cover", "title": "Finite Element Analysis Report" },
+    {
+      "id": "scope", "kind": "bullets", "title": "Scope & Objective",
+      "bullets": [
+        "Objective — what is being evaluated and why.",
+        "Design decision this analysis supports.",
+        "Acceptance criteria (allowable stress, displacement limit, safety factor).",
+        "Software and version used."
+      ]
+    },
+    {
+      "id": "geometry", "kind": "figures", "title": "Model & Geometry",
+      "accepts": { "types": ["Geometry", "Model"], "capacity": 2, "preferViews": ["isometric", "full", "front"] },
+      "bullets": ["Geometry source and revision.", "Simplifications and assumptions.", "Units."]
+    },
+    {
+      "id": "materials", "kind": "table", "title": "Material Properties",
+      "columns": ["Material", "E (MPa)", "Poisson ν", "Yield (MPa)", "Ultimate (MPa)", "Density (kg/m³)"],
+      "rows": [["", "", "", "", "", ""]],
+      "note": "The allowable is the number any pass/fail statement is judged against. It is entered, never inferred from an image."
+    },
+    {
+      "id": "mesh", "kind": "figures", "title": "Mesh",
+      "accepts": { "types": ["Mesh"], "capacity": 2 },
+      "bullets": ["Element type and order.", "Global element size.", "Local refinement in critical regions.", "Quality metrics (aspect ratio, skewness, Jacobian).", "Mesh convergence study reference."]
+    },
+    {
+      "id": "bc", "kind": "figures", "title": "Boundary Conditions & Loads",
+      "accepts": { "types": ["Boundary conditions", "Loads"], "capacity": 2 }
+    },
+    { "id": "results", "kind": "results", "title": "Results", "dynamic": "per-group" },
+    { "id": "summary", "kind": "table", "title": "Results Summary", "dynamic": "summary" },
+    {
+      "id": "conclusions", "kind": "bullets", "title": "Conclusions & Recommendations",
+      "bullets": [
+        "Whether the design passes against the stated acceptance criteria.",
+        "The governing load case and failure mode.",
+        "Remaining margin.",
+        "Recommendations and open items."
+      ]
+    },
+    { "id": "appendix", "kind": "appendix", "title": "Appendix — Source Images" }
+  ],
+  "captions": {
+    "figures": "{type}{loadcase}{component}",
+    "results": "{type}{loadcase}{component} — peak {max} {unit}",
+    "detailInset": "{label}",
+    "appendix": "{filename}"
+  },
+  "detailRules": {
+    "keywords": {
+      "zoom": ["zoom", "zoomed", "detail", "closeup", "close-up", "close", "local", "enlarged", "magnified", "scaledview", "inset"],
+      "section": ["section", "sec", "cut", "slice", "half", "clip", "sect", "crosssection"]
+    },
+    "filledFrameThreshold": 0.1,
+    "requireFullViewPerGroup": true,
+    "maxInsetsPerSlide": 3,
+    "putDetailsOnParentSlide": true
+  },
+  "review": {
+    "confirmBelow": 0.7,
+    "blockExportOnUnconfirmedValues": true
+  }
+}

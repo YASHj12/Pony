@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ansys Report Builder</title>
+<meta name="description" content="Drop Ansys screenshots, get a reviewed, classified FEA report in your template." />
+<link rel="stylesheet" href="/css/styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📐</text></svg>" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="mark">FE</div>
+    <div>
+      <h1>Ansys Report Builder</h1>
+      <p>Drop the screenshots — it classifies them, places them, writes the captions.</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span id="modeBadge" class="badge">on-device</span>
+    <button id="templateBtn" class="btn btn-ghost" aria-expanded="false">⚙︎ Template &amp; details</button>
+    <button id="exportBtn" class="btn btn-primary" disabled>⭳ Export .pptx</button>
+    <button id="csvBtn" class="btn btn-ghost" disabled>CSV index</button>
+    <button id="clearBtn" class="btn btn-ghost" disabled>Clear</button>
+  </div>
+</header>
+
+<!-- ─────────────── template & metadata ─────────────── -->
+<section id="panel" class="panel" hidden>
+  <div class="panel-grid">
+    <div class="field"><label for="mProject">Project</label><input id="mProject" type="text" placeholder="Bracket Assembly — Static Structural" /></div>
+    <div class="field"><label for="mPart">Part / assembly</label><input id="mPart" type="text" placeholder="Bracket rev C" /></div>
+    <div class="field"><label for="mClient">Client / programme</label><input id="mClient" type="text" /></div>
+    <div class="field"><label for="mAuthor">Prepared by</label><input id="mAuthor" type="text" /></div>
+    <div class="field"><label for="mRevision">Revision</label><input id="mRevision" type="text" placeholder="A" /></div>
+    <div class="field"><label for="mDate">Date</label><input id="mDate" type="date" /></div>
+    <div class="field">
+      <label for="mAllowable">Allowable stress <span class="muted">(MPa)</span></label>
+      <input id="mAllowable" type="number" step="0.1" placeholder="e.g. 250" />
+      <small>Entered by you, never read from a screenshot. Pass/fail is only computed when this is filled in.</small>
+    </div>
+    <div class="field">
+      <label for="mSoftware">Solver / software</label>
+      <input id="mSoftware" type="text" placeholder="Ansys Mechanical 2024 R2" />
+    </div>
+    <div class="field field-wide">
+      <label for="templateJson">Template</label>
+      <small>This file defines the sections, the order and the caption wording. Swap in your company template here.</small>
+      <div class="row">
+        <button id="templateReset" class="btn btn-sm" type="button">Reset to default</button>
+        <button id="templateDownload" class="btn btn-sm" type="button">Download current</button>
+        <label class="btn btn-sm filebtn" for="templateUpload">Load from file…</label>
+        <input id="templateUpload" type="file" accept=".json,application/json" hidden />
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── drop ─────────────── -->
+<section class="stage">
+  <div id="drop" class="dropzone" tabindex="0" role="button" aria-label="Add images">
+    <div class="drop-icon">📐</div>
+    <p class="drop-title">Drop Ansys screenshots here</p>
+    <p class="drop-sub">or click to browse · paste from clipboard · a whole folder is fine</p>
+    <p class="drop-note" id="dropNote">Everything is processed in this browser. Nothing is uploaded.</p>
+    <input id="fileInput" type="file" accept="image/*" multiple hidden />
+  </div>
+  <div id="progress" class="progress-wrap" hidden>
+    <div class="bar"><div id="barFill"></div></div>
+    <div class="progress-text"><span id="progressText"></span></div>
+  </div>
+</section>
+
+<!-- ─────────────── workspace ─────────────── -->
+<main id="workspace" class="workspace" hidden>
+  <section class="pane pane-preview">
+    <div class="pane-head">
+      <h2>Report preview</h2>
+      <span id="slideMeta" class="muted small"></span>
+    </div>
+    <div id="preview" class="slides"></div>
+  </section>
+
+  <section class="pane pane-review">
+    <div class="pane-head">
+      <h2>Review</h2>
+      <span id="reviewMeta" class="muted small"></span>
+    </div>
+    <div id="gaps" class="gaps"></div>
+    <div id="queue" class="queue"></div>
+    <div class="pane-subhead">
+      <h3>All images</h3>
+      <span class="muted small">click a card · <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>Enter</kbd> confirm · <kbd>z</kbd> zoom · <kbd>c</kbd> section · <kbd>x</kbd> exclude</span>
+    </div>
+    <div id="cards" class="cards"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Ansys Report Builder · on-device classification, no upload</span>
+  <span id="footStats" class="muted"></span>
+</footer>
+
+<div id="toast" class="toast" hidden></div>
+<div id="lightbox" class="lightbox" hidden><img id="lightboxImg" alt="" /></div>
+
+<template id="cardTpl">
+  <article class="card" tabindex="0">
+    <div class="card-media">
+      <img class="thumb" alt="" loading="lazy" />
+      <span class="tag tag-kind"></span>
+      <span class="tag tag-detail" hidden></span>
+      <span class="tag tag-dup" hidden>duplicate?</span>
+      <span class="tag tag-legend" hidden>legend</span>
+    </div>
+    <div class="card-body">
+      <div class="card-head">
+        <span class="name"></span>
+        <button class="icon remove" title="Remove">✕</button>
+      </div>
+
+      <div class="fields">
+        <label class="f">
+          <span>Result type</span>
+          <select class="f-type"></select>
+        </label>
+        <label class="f">
+          <span>Load case</span>
+          <input class="f-load" type="text" placeholder="LC1" list="loadCases" />
+        </label>
+        <label class="f">
+          <span>Component</span>
+          <input class="f-comp" type="text" placeholder="Bracket" />
+        </label>
+        <label class="f">
+          <span>Peak value</span>
+          <span class="row">
+            <input class="f-value" type="number" step="any" placeholder="187.4" />
+            <select class="f-unit">
+              <option value="">–</option>
+              <option>MPa</option><option>kPa</option><option>Pa</option><option>GPa</option>
+              <option>mm</option><option>m</option><option>°C</option><option>K</option>
+              <option>N</option><option>Hz</option><option>–</option>
+            </select>
+          </span>
+        </label>
+      </div>
+
+      <div class="legendrow">
+        <img class="legendcrop" alt="legend" hidden />
+        <div class="legendtext muted small"></div>
+      </div>
+
+      <div class="why small muted"></div>
+
+      <div class="card-actions">
+        <button class="btn btn-sm act-confirm">✓ Confirm</button>
+        <button class="btn btn-sm act-detail">Zoom</button>
+        <button class="btn btn-sm act-section">Cut section</button>
+        <button class="btn btn-sm act-full">Full view</button>
+        <button class="btn btn-sm act-exclude">Exclude</button>
+      </div>
+    </div>
+  </article>
+</template>
+
+<datalist id="loadCases"></datalist>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
